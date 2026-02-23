@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Flight Tracker</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        /* General Setup */
+        body { margin: 0; padding: 0; display: flex; height: 100vh; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #eef2f5; color: #333; }
+        #sidebar { width: 380px; background-color: #ffffff; padding: 25px; box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 10; display: flex; flex-direction: column; border-radius: 0 20px 20px 0; position: relative; }
+        #map-container { flex-grow: 1; position: relative; }
+        #map { width: 100%; height: 100%; }
+
+        /* Tabs */
+        .tab-buttons { display: flex; margin-bottom: 20px; background: #f4f5f7; border-radius: 10px; overflow: hidden; }
+        .tab-btn { flex: 1; padding: 12px; cursor: pointer; background: transparent; border: none; font-weight: 600; color: #666; transition: 0.3s; }
+        .tab-btn.active { background: #007bff; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        /* Form Layout */
+        .row { display: flex; gap: 15px; margin-bottom: 15px; }
+        .col { flex: 1; position: relative; }
+        label { font-size: 0.9em; font-weight: 600; color: #555; margin-bottom: 5px; display: block; }
+        input[type="text"], input[type="date"] { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box; background: #fafafa; transition: border-color 0.2s; }
+        input:focus { border-color: #007bff; outline: none; }
+        button[type="submit"], button.disabled-btn { width: 100%; padding: 12px; background-color: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1em; transition: 0.2s; }
+        button[type="submit"]:hover { background-color: #218838; }
+        button.disabled-btn { background-color: #ccc; cursor: not-allowed; }
+
+        /* Saved Flights List */
+        #flight-list-container { margin-top: 25px; flex-grow: 1; overflow-y: auto; padding-right: 5px; }
+        ul { list-style-type: none; padding: 0; margin: 0; }
+        
+        /* Route Card */
+        .route-card { background: #f9fbfd; margin-bottom: 15px; border-radius: 10px; border: 1px solid #eee; box-shadow: 0 2px 4px rgba(0,0,0,0.02); display: flex; flex-direction: column; position: relative; overflow: hidden; }
+        .color-bar { width: 12px; position: absolute; left: 0; top: 0; bottom: 0; cursor: pointer; transition: filter 0.2s; z-index: 2; }
+        .color-bar:hover { filter: brightness(0.85); }
+        .route-main { padding: 12px 12px 12px 24px; display: flex; flex-direction: column; position: relative; }
+        .route-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .route-title { font-weight: bold; font-size: 1.1em; }
+        
+        /* Delete Buttons */
+        .delete-master-btn, .delete-flight-btn { background: none; border: none; color: #aaa; cursor: pointer; font-size: 1.2em; line-height: 1; padding: 0 5px; transition: color 0.2s; }
+        .delete-master-btn:hover, .delete-flight-btn:hover { color: #dc3545; }
+
+        /* Details / More Section */
+        .more-btn { background: none; border: none; color: #007bff; font-size: 0.85em; cursor: pointer; text-align: left; padding: 0; margin-top: 5px; font-weight: 600; display: inline-block; width: fit-content; }
+        .more-btn:hover { text-decoration: underline; }
+        .flight-details-list { display: none; background: #fff; border-top: 1px solid #eee; padding: 10px 12px 10px 24px; font-size: 0.9em; }
+        .flight-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #f0f0f0; }
+        .flight-item:last-child { border-bottom: none; }
+        .flight-badge { background: #eef2f5; padding: 2px 6px; border-radius: 4px; font-size: 0.85em; color: #555; }
+
+        /* Modern 8-Color Palette Popup */
+        .color-palette { display: none; position: absolute; left: 15px; top: 10px; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 8px; z-index: 100; grid-template-columns: repeat(4, 1fr); gap: 6px; border: 1px solid #ddd; }
+        .color-swatch { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 1px solid rgba(0,0,0,0.1); }
+        .color-swatch:hover { transform: scale(1.1); }
+        /* Custom Autocomplete Dropdown */
+        .autocomplete-wrapper { position: relative; width: 100%; }
+        .autocomplete-list { 
+            position: absolute; top: 100%; left: 0; right: 0; z-index: 1000; 
+            background: #fff; border: 1px solid #ddd; border-radius: 8px; 
+            max-height: 200px; overflow-y: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
+            display: none; margin-top: 5px; padding: 0; list-style: none;
+        }
+        .autocomplete-item { 
+            padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; 
+            font-size: 0.85em; display: flex; flex-direction: column;
+        }
+        .autocomplete-item:last-child { border-bottom: none; }
+        .autocomplete-item:hover { background-color: #f8f9fa; }
+        .autocomplete-item.autocomplete-active { background-color: #e9ecef; }
+        .ac-code { font-weight: bold; color: #007bff; font-size: 1.1em; }
+        .ac-details { color: #666; margin-top: 2px; }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2 style="margin-top: 0;">Flight Tracker</h2>
+        
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="switchTab('route-tab')">By Route</button>
+            <button class="tab-btn" onclick="switchTab('number-tab')">By Flight #</button>
+        </div>
+
+        <div id="route-tab" class="tab-content active">
+            <form id="route-form">
+                <div class="row">
+                    <div class="col autocomplete-wrapper">
+                        <label>From:</label>
+                        <input type="text" id="start-airport" placeholder="Search city or code..." autocomplete="off" required>
+                        <ul id="start-autocomplete" class="autocomplete-list"></ul>
+                    </div>
+                    <div class="col autocomplete-wrapper">
+                        <label>To:</label>
+                        <input type="text" id="end-airport" placeholder="Search city or code..." autocomplete="off" required>
+                        <ul id="end-autocomplete" class="autocomplete-list"></ul>
+                    </div>
+                </div>
+
+                <label>Date:</label>
+                <input type="date" id="route-date" style="margin-bottom: 15px;" required>
+                
+                <label>Flight Number (Optional):</label>
+                <input type="text" id="opt-flight-number" placeholder="e.g. DL0001" style="margin-bottom: 20px;">
+
+                <button type="submit">Add Flight</button>
+            </form>
+        </div>
+
+        <div id="number-tab" class="tab-content">
+            <form id="number-form" onsubmit="event.preventDefault();">
+                <label>Flight Number:</label>
+                <input type="text" id="flight-number" placeholder="e.g. DL0001" disabled style="margin-bottom: 15px;">
+                <label>Date:</label>
+                <input type="date" id="number-date" disabled style="margin-bottom: 20px;">
+                <button class="disabled-btn" disabled>Coming Soon</button>
+            </form>
+        </div>
+
+        <div id="flight-list-container">
+            <h3 style="color: #444; margin-bottom: 10px;">Saved Routes</h3>
+            <ul id="flight-list"></ul>
+        </div>
+    </div>
+
+    <div id="map-container">
+        <div id="map"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+
+    <script>
+        // State variables
+        let isPaperMap = false; // False = Infinite wrapping, True = Paper map (no wrap)
+        let currentTileLayer;
+
+        const map = L.map('map', { 
+            preferCanvas: true,
+            zoomControl: false ,
+            zoomSnap: 0 // Allows fractional zoom to exactly fit screen width
+        });
+
+        // Add zoom top left
+        L.control.zoom({ position: 'topleft' }).addTo(map);
+
+        // SVG Icons
+        const iconRecenter = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>`;
+        const iconExport = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+        const iconGlobe = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
+        const iconPaper = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>`;
+        const iconShare = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>`;
+
+        // Custom Tools Control
+        L.Control.CustomTools = L.Control.extend({
+            onAdd: function(map) {
+                const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+                container.style.backgroundColor = 'white';
+                
+                // Recenter
+                const btnRecenter = L.DomUtil.create('a', '', container);
+                btnRecenter.innerHTML = iconRecenter;
+                btnRecenter.href = "#"; btnRecenter.title = "Recenter Map";
+                btnRecenter.onclick = (e) => { e.preventDefault(); map.setView([20, 0], 2); };
+
+                // Map Wrap Mode Toggle
+                const btnWrap = L.DomUtil.create('a', '', container);
+                btnWrap.innerHTML = iconGlobe;
+                btnWrap.id = "btn-wrap-icon";
+                btnWrap.href = "#"; btnWrap.title = "Toggle Non-Infinite Mode";
+                btnWrap.onclick = (e) => { e.preventDefault(); toggleMapMode(); };
+
+                // Export
+                const btnExport = L.DomUtil.create('a', '', container);
+                btnExport.innerHTML = iconExport;
+                btnExport.href = "#"; btnExport.title = "Export Map Image";
+                btnExport.onclick = (e) => { e.preventDefault(); exportMap(); };
+
+                // Share Link
+                const btnShare = L.DomUtil.create('a', '', container);
+                btnShare.innerHTML = iconShare;
+                btnShare.href = "#"; btnShare.title = "Share Map Link";
+                btnShare.onclick = (e) => { e.preventDefault(); generateShareLink(); };
+
+                [btnRecenter, btnWrap, btnExport, btnShare].forEach(btn => {
+                    btn.style.display = 'flex'; btn.style.justifyContent = 'center'; btn.style.alignItems = 'center';
+                });
+                return container;
+            }
+        });
+        map.addControl(new L.Control.CustomTools({ position: 'topleft' }));
+
+        const mapLayers = L.layerGroup().addTo(map);
+
+        // Apply tile layer settings (Wrapped vs Unwrapped)
+        function updateTileLayer() {
+            if (currentTileLayer) map.removeLayer(currentTileLayer);
+            
+            // 1. Cut off Antarctica by changing the southern bound from -85.0511 to -60
+            const southBound = -82;
+            const northBound = 85.0511;
+
+            // 2. Expand the left/right panning limits for the wrapped mode (-250 to 250)
+            const maxWorldBounds = isPaperMap 
+                ? [[southBound, -180], [northBound, 180]] 
+                : [[southBound, -250], [northBound, 250]];
+
+            currentTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19, 
+                attribution: '© OpenStreetMap',
+                noWrap: isPaperMap,
+                // Keep tile fetching within the real world coordinates
+                bounds: [[southBound, -180], [northBound, 180]] 
+            }).addTo(map);
+
+            // Apply our newly calculated bounds
+            map.setMaxBounds(maxWorldBounds);
+
+            if (isPaperMap) {
+                // PAPER MODE: Hard lock
+                const mapWidth = document.getElementById('map').clientWidth;
+                const widthFitZoom = Math.log2(mapWidth / 256);
+                
+                map.setMinZoom(widthFitZoom);
+                map.options.maxBoundsViscosity = 1.0; // Hard wall, no peeking
+                map.setView([20, 0], widthFitZoom);
+            } else {
+                // INFINITE MODE: Smooth snap back
+                map.setMinZoom(2);
+                map.options.maxBoundsViscosity = 0.8; // Increased from 0.5 for a cleaner snap
+                map.setView([20, 0], 2);
+            }
+        }
+        
+        // Ensure Paper Mode dynamically adjusts if the user resizes their browser window
+        window.addEventListener('resize', () => {
+            if (isPaperMap) {
+                const mapWidth = document.getElementById('map').clientWidth;
+                map.setMinZoom(Math.log2(mapWidth / 256));
+            }
+        });
+
+        updateTileLayer();
+
+        // Toggle map modes
+        function toggleMapMode() {
+            isPaperMap = !isPaperMap;
+            document.getElementById('btn-wrap-icon').innerHTML = isPaperMap ? iconPaper : iconGlobe;
+            updateTileLayer();
+            renderApp(); // Redraw lines because offsets changed
+        }
+
+        // --- Data State Management ---
+        let airportData = {};
+        // Fetch the JSON file when the page loads
+        window.onload = async function() {
+            try {
+                const response = await fetch('airports.json');
+                if (!response.ok) throw new Error("Network response was not ok");
+                airportData = await response.json();
+                
+                const urlParams = new URLSearchParams(window.location.search);
+                const compressedData = urlParams.get('m');
+                
+                if (compressedData) {
+                    // Scenario A: User clicked a share link. Decompress it!
+                    const decompressedJSON = LZString.decompressFromEncodedURIComponent(compressedData);
+                    routesState = JSON.parse(decompressedJSON);
+                    
+                    // Strip the ugly data from the URL bar so it looks clean again
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                } else {
+                    // Scenario B: Normal visit. Check if we have saved data from a previous session!
+                    const savedState = localStorage.getItem('flightTrackerState');
+                    if (savedState) {
+                        routesState = JSON.parse(savedState);
+                    }
+                }
+                
+                // If we loaded data from either a link OR local storage, update the ID counter and draw the map
+                if (Object.keys(routesState).length > 0) {
+                    let maxId = -1;
+                    for (const route in routesState) {
+                        routesState[route].flights.forEach(f => {
+                            if (f.id > maxId) maxId = f.id;
+                        });
+                    }
+                    flightIdCounter = maxId + 1;
+                    renderApp();
+                }
+
+            } catch (error) {
+                console.error("Error loading data:", error);
+                alert("Could not load airport data or parse the share link.");
+            }
+        };
+
+// Custom Autocomplete Logic
+        function setupAutocomplete(inputId, listId) {
+            const input = document.getElementById(inputId);
+            const list = document.getElementById(listId);
+            let currentFocus = -1; // Tracks which item is highlighted via keyboard
+
+            input.addEventListener('input', function() {
+                const val = this.value.toLowerCase().trim(); 
+                list.innerHTML = '';
+                currentFocus = -1; // Reset focus when typing
+                
+                if (!val) {
+                    list.style.display = 'none';
+                    return;
+                }
+
+                // Create our two buckets
+                let codeMatches = [];
+                let nameMatches = [];
+
+                for (const code in airportData) {
+                    const airport = airportData[code];
+                    const lowerCode = code.toLowerCase();
+                    
+                    if (lowerCode.startsWith(val)) {
+                        codeMatches.push({ code, airport });
+                    } else {
+                        const searchString = `${airport.city} ${airport.name}`.toLowerCase();
+                        if (searchString.includes(val)) {
+                            nameMatches.push({ code, airport });
+                        }
+                    }
+                }
+
+                const combinedMatches = [...codeMatches, ...nameMatches].slice(0, 40);
+
+                if (combinedMatches.length > 0) {
+                    combinedMatches.forEach(match => {
+                        const li = document.createElement('li');
+                        li.className = 'autocomplete-item';
+                        li.innerHTML = `
+                            <span class="ac-code">${match.code}</span>
+                            <span class="ac-details">${match.airport.city}, ${match.airport.country} - ${match.airport.name}</span>
+                        `;
+                        
+                        li.onclick = () => {
+                            input.value = match.code; // Populate input
+                            list.style.display = 'none';
+                        };
+                        list.appendChild(li);
+                    });
+                    list.style.display = 'block';
+                } else {
+                    list.style.display = 'none';
+                }
+            });
+
+            // Handle Arrow Keys and Enter
+            input.addEventListener('keydown', function(e) {
+                let items = list.getElementsByTagName('li');
+                if (items.length === 0 || list.style.display === 'none') return;
+
+                if (e.key === 'ArrowDown') {
+                    currentFocus++;
+                    addActive(items);
+                } else if (e.key === 'ArrowUp') {
+                    currentFocus--;
+                    addActive(items);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault(); // Stop the form from submitting
+                    if (currentFocus > -1) {
+                        items[currentFocus].click(); // Simulate a mouse click
+                    }
+                }
+            });
+
+            // Helper to add the highlight class
+            function addActive(items) {
+                if (!items) return false;
+                removeActive(items); // Clear previous highlights
+                
+                // Wrap around logic
+                if (currentFocus >= items.length) currentFocus = 0; 
+                if (currentFocus < 0) currentFocus = (items.length - 1); 
+                
+                items[currentFocus].classList.add('autocomplete-active');
+                
+                // Auto-scroll the dropdown if you arrow down past the visible area
+                items[currentFocus].scrollIntoView({ block: 'nearest' });
+            }
+
+            // Helper to remove the highlight class
+            function removeActive(items) {
+                for (let i = 0; i < items.length; i++) {
+                    items[i].classList.remove('autocomplete-active');
+                }
+            }
+
+            // Hide dropdown if user clicks outside of it
+            document.addEventListener('click', function(e) {
+                if (e.target !== input) list.style.display = 'none';
+            });
+        }
+
+        // Initialize the autocomplete for both inputs
+        setupAutocomplete('start-airport', 'start-autocomplete');
+        setupAutocomplete('end-airport', 'end-autocomplete');
+
+        const presetColors = ['#007bff', '#28a745', '#dc3545', '#ffc107', '#17a2b8', '#6f42c1', '#fd7e14', '#343a40'];
+        let routesState = {};
+        let flightIdCounter = 0;
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        document.getElementById('route-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const startCode = document.getElementById('start-airport').value.toUpperCase();
+            const endCode = document.getElementById('end-airport').value.toUpperCase();
+            const date = document.getElementById('route-date').value;
+            const flightNum = document.getElementById('opt-flight-number').value.toUpperCase();
+
+            if (!airportData[startCode] || !airportData[endCode]) { alert("Airport not found."); return; }
+            if (startCode === endCode) { alert("Airports must be different."); return; }
+
+            const routeKey = [startCode, endCode].sort().join('-');
+
+            if (!routesState[routeKey]) {
+                // const colorIndex = Object.keys(routesState).length % presetColors.length;
+                routesState[routeKey] = { color: presetColors[0], flights: [] };
+            }
+
+            routesState[routeKey].flights.push({ id: flightIdCounter++, from: startCode, to: endCode, date: date, flightNum: flightNum });
+            document.getElementById('start-airport').value = '';
+            document.getElementById('end-airport').value = '';
+            document.getElementById('opt-flight-number').value = '';
+            renderApp();
+        });
+
+        function renderApp() {
+            localStorage.setItem('flightTrackerState', JSON.stringify(routesState));
+
+
+            mapLayers.clearLayers();
+            const listContainer = document.getElementById('flight-list');
+            listContainer.innerHTML = '';
+
+            for (const [routeKey, routeData] of Object.entries(routesState)) {
+                if (routeData.flights.length === 0) continue;
+
+                const startingPoints = new Set(routeData.flights.map(f => f.from));
+                const isRoundTrip = startingPoints.size > 1;
+
+                const [codeA, codeB] = routeKey.split('-');
+                drawFlightPath(codeA, codeB, isRoundTrip, routeData.color);
+
+                const mainFrom = routeData.flights[0].from;
+                const mainTo = routeData.flights[0].to;
+                const displayArrow = isRoundTrip ? '↔' : '➔';
+                
+                const li = document.createElement('li');
+                li.className = 'route-card';
+
+                let colorSwatchesHTML = '';
+                presetColors.forEach(c => {
+                    colorSwatchesHTML += `<div class="color-swatch" style="background:${c};" onclick="changeRouteColor('${routeKey}', '${c}')"></div>`;
+                });
+
+                let flightInfoHTML = '';
+                if (routeData.flights.length === 1) {
+                    const f = routeData.flights[0];
+                    flightInfoHTML = `<div style="font-size:0.85em; color:#666; margin-top:4px;">${f.date} ${f.flightNum ? `<span class="flight-badge">${f.flightNum}</span>` : ''}</div>`;
+                } else {
+                    let detailsHTML = routeData.flights.map(f => `
+                        <div class="flight-item">
+                            <span><b>${f.from} ➔ ${f.to}</b> &nbsp;|&nbsp; ${f.date} ${f.flightNum ? `<span class="flight-badge">${f.flightNum}</span>` : ''}</span>
+                            <button class="delete-flight-btn" onclick="deleteFlight('${routeKey}', ${f.id})">×</button>
+                        </div>
+                    `).join('');
+                    flightInfoHTML = `<button class="more-btn" onclick="toggleDetails(this)">+ ${routeData.flights.length} flights (Show More)</button><div class="flight-details-list">${detailsHTML}</div>`;
+                }
+
+                li.innerHTML = `
+                    <div class="color-bar" style="background-color: ${routeData.color};" onclick="toggleColorPalette(this)"></div>
+                    <div class="color-palette">${colorSwatchesHTML}</div>
+                    <div class="route-main">
+                        <div class="route-header">
+                            <span class="route-title">${mainFrom} ${displayArrow} ${mainTo}</span>
+                            <button class="delete-master-btn" onclick="deleteEntireRoute('${routeKey}')" title="Remove Route">×</button>
+                        </div>
+                        ${flightInfoHTML}
+                    </div>
+                `;
+                listContainer.appendChild(li);
+            }
+        }
+
+        function drawFlightPath(codeA, codeB, isRoundTrip, color) {
+            const coordsA = airportData[codeA];
+            const coordsB = airportData[codeB];
+            const startPoint = turf.point([coordsA.lon, coordsA.lat]);
+            const endPoint = turf.point([coordsB.lon, coordsB.lat]);
+            const greatCircle = turf.greatCircle(startPoint, endPoint);
+
+            const lineStyle = { color: color, weight: 3, opacity: 0.8, dashArray: isRoundTrip ? '' : '8, 8' };
+            const markerStyle = { radius: 5, fillColor: "white", color: "#333", weight: 2, opacity: 1, fillOpacity: 0.8 };
+
+            // The secret to showing the line on BOTH wrap arounds:
+            // If Paper Map is true, only draw it once at [0].
+            // If false, draw it at its normal spot [0], one Earth to the left [-360], and one Earth to the right [+360]
+            const offsets = isPaperMap ? [0] : [-360, 0, 360];
+
+            offsets.forEach(offset => {
+                // Deep copy the GeoJSON so we don't accidentally shift the original forever
+                const shiftedCircle = JSON.parse(JSON.stringify(greatCircle));
+                
+                // Shift the longitudes inside the line geometry
+                turf.coordEach(shiftedCircle, function (currentCoord) {
+                    currentCoord[0] += offset;
+                });
+                
+                // Draw line and markers with the offsets
+                L.geoJSON(shiftedCircle, { style: lineStyle }).addTo(mapLayers);
+                L.circleMarker([coordsA.lat, coordsA.lon + offset], markerStyle).addTo(mapLayers).bindPopup(`<b>${codeA}</b>`);
+                L.circleMarker([coordsB.lat, coordsB.lon + offset], markerStyle).addTo(mapLayers).bindPopup(`<b>${codeB}</b>`);
+            });
+        }
+
+        // --- UI Interactions ---
+        function toggleDetails(btn) {
+            const detailsDiv = btn.nextElementSibling;
+            if (detailsDiv.style.display === 'block') {
+                detailsDiv.style.display = 'none';
+                btn.innerText = btn.innerText.replace('(Hide)', '(Show More)');
+            } else {
+                detailsDiv.style.display = 'block';
+                btn.innerText = btn.innerText.replace('(Show More)', '(Hide)');
+            }
+        }
+
+        function toggleColorPalette(barElement) {
+            document.querySelectorAll('.color-palette').forEach(p => p.style.display = 'none');
+            const palette = barElement.nextElementSibling;
+            palette.style.display = 'grid';
+            setTimeout(() => {
+                document.addEventListener('click', function closePalette(e) {
+                    if (!palette.contains(e.target)) {
+                        palette.style.display = 'none';
+                        document.removeEventListener('click', closePalette);
+                    }
+                });
+            }, 10);
+        }
+
+        function changeRouteColor(routeKey, newColor) { routesState[routeKey].color = newColor; renderApp(); }
+        function deleteEntireRoute(routeKey) { delete routesState[routeKey]; renderApp(); }
+        function deleteFlight(routeKey, flightId) {
+            routesState[routeKey].flights = routesState[routeKey].flights.filter(f => f.id !== flightId);
+            if (routesState[routeKey].flights.length === 0) delete routesState[routeKey];
+            renderApp();
+        }
+
+        function exportMap() {
+            const mapElement = document.getElementById('map-container');
+            const controls = document.querySelector('.leaflet-control-container');
+            controls.style.display = 'none'; 
+            html2canvas(mapElement, { useCORS: true, allowTaint: false }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'flight-map.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                controls.style.display = 'block'; 
+            }).catch(err => {
+                alert("Export issue. Make sure your browser allows canvas downloads.");
+                controls.style.display = 'block';
+            });
+        }
+
+        function generateShareLink() {
+            if (Object.keys(routesState).length === 0) {
+                alert("Add some flights first before sharing!");
+                return;
+            }
+            
+            // Crush the JSON data down using LZ-String compression
+            const jsonState = JSON.stringify(routesState);
+            const compressedState = LZString.compressToEncodedURIComponent(jsonState);
+            
+            // Construct the shortened URL
+            const currentUrl = window.location.href.split('?')[0];
+            const shareUrl = `${currentUrl}?m=${compressedState}`;
+            
+            navigator.clipboard.writeText(shareUrl).then(() => {
+                alert("Compressed share link copied to clipboard!");
+            }).catch(err => {
+                prompt("Copy this link to share:", shareUrl); 
+            });
+        }
+    </script>
+</body>
+</html>
