@@ -31,7 +31,7 @@
         button[type="submit"]:hover { background-color: #218838; }
         button.disabled-btn { background-color: #ccc; cursor: not-allowed; }
 
-        /* Saved Flights List */
+    /* Saved Flights List */
         #flight-list-container { margin-top: 25px; flex-grow: 1; overflow-y: auto; padding-right: 5px; }
         ul { list-style-type: none; padding: 0; margin: 0; }
         
@@ -76,6 +76,59 @@
         .autocomplete-item.autocomplete-active { background-color: #e9ecef; }
         .ac-code { font-weight: bold; color: #007bff; font-size: 1.1em; }
         .ac-details { color: #666; margin-top: 2px; }
+        /* --- Sleek Statistics Panel (Resized to 80%) --- */
+        #stats-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        #stats-panel {
+            pointer-events: auto;
+            position: absolute;
+            bottom: -240px; /* Adjusted for new height */
+            left: 0;
+            right: 0;
+            height: 224px; /* ~80% of 280px */
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(255,255,255,0.5);
+            box-shadow: 0 -10px 30px rgba(0,0,0,0.1);
+            transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            padding: 15px 30px; /* Scaled down */
+            box-sizing: border-box;
+            display: flex;
+            gap: 15px; /* Scaled down */
+        }
+
+        #stats-panel.open {
+            bottom: 0;
+        }
+
+        .stat-col { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+        .stat-box {
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(255,255,255,0.9);
+            border-radius: 10px;
+            padding: 10px 15px; /* Scaled down */
+            display: flex; flex-direction: column; justify-content: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+            flex-grow: 1;
+        }
+
+        .stat-value { font-size: 1.45em; font-weight: 800; color: #1a1a1a; line-height: 1; margin-bottom: 4px; }
+        .stat-label { font-size: 0.7em; color: #666; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+
+        .top-airports-box { flex: 2; justify-content: flex-start; }
+        .top-airports-box ul { list-style: none; padding: 0; margin: 10px 0 0 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+        .top-airports-box li { display: flex; justify-content: space-between; align-items: center; padding-bottom: 6px; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 0.85em; }
+        .top-airports-box li:last-child { border-bottom: none; padding-bottom: 0; }
+        .ap-count-badge { background: #007bff; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold;}
     </style>
 </head>
 <body>
@@ -131,6 +184,43 @@
 
     <div id="map-container">
         <div id="map"></div>
+        <div id="stats-container">
+            <div id="stats-panel">
+                <div class="stat-col">
+                    <div class="stat-box">
+                        <div class="stat-value" id="stat-dist">0 km</div>
+                        <div class="stat-label">Total Distance</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="stat-time">0h 0m</div>
+                        <div class="stat-label">Time in Air</div>
+                    </div>
+                </div>
+                
+                <div class="stat-col">
+                    <div class="stat-box">
+                        <div class="stat-value" id="stat-emissions">0 kg</div>
+                        <div class="stat-label">Est. CO₂ Emissions</div>
+                    </div>
+                    <div style="display: flex; gap: 15px; flex-grow: 1;">
+                        <div class="stat-box" style="padding: 15px 10px; align-items: center;">
+                            <div class="stat-value" id="stat-countries">0</div>
+                            <div class="stat-label" style="text-align:center;">Countries</div>
+                        </div>
+                        <div class="stat-box" style="padding: 15px 10px; align-items: center;">
+                            <div class="stat-value" id="stat-airports">0</div>
+                            <div class="stat-label" style="text-align:center;">Airports</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-box top-airports-box">
+                    <div class="stat-label" style="color:#1a1a1a; font-size:1em;">Top 5 Visited Airports</div>
+                    <ul id="top-airports-list">
+                        </ul>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -139,6 +229,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
 
     <script>
+        let validRoutesData = {};
         // State variables
         let isPaperMap = false; // False = Infinite wrapping, True = Paper map (no wrap)
         let currentTileLayer;
@@ -158,6 +249,7 @@
         const iconGlobe = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
         const iconPaper = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>`;
         const iconShare = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>`;
+        const iconStats = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>`;
 
         // Custom Tools Control
         L.Control.CustomTools = L.Control.extend({
@@ -190,7 +282,13 @@
                 btnShare.href = "#"; btnShare.title = "Share Map Link";
                 btnShare.onclick = (e) => { e.preventDefault(); generateShareLink(); };
 
-                [btnRecenter, btnWrap, btnExport, btnShare].forEach(btn => {
+                // Statistics Toggle
+                const btnStats = L.DomUtil.create('a', '', container);
+                btnStats.innerHTML = iconStats;
+                btnStats.href = "#"; btnStats.title = "Toggle Statistics Panel";
+                btnStats.onclick = (e) => { e.preventDefault(); toggleStats(); };
+
+                [btnRecenter, btnWrap, btnExport, btnShare, btnStats].forEach(btn => {
                     btn.style.display = 'flex'; btn.style.justifyContent = 'center'; btn.style.alignItems = 'center';
                 });
                 return container;
@@ -263,9 +361,18 @@
         // Fetch the JSON file when the page loads
         window.onload = async function() {
             try {
-                const response = await fetch('airports.json');
-                if (!response.ok) throw new Error("Network response was not ok");
-                airportData = await response.json();
+                // Fetch both JSONs in parallel
+                const [airportRes, routesRes] = await Promise.all([
+                    fetch('airports.json'),
+                    fetch('valid_routes.json').catch(() => ({ ok: false })) // Catch just in case file is missing
+                ]);
+
+                if (!airportRes.ok) throw new Error("Could not load airports");
+                airportData = await airportRes.json();
+                
+                if (routesRes.ok) {
+                    validRoutesData = await routesRes.json();
+                }
                 
                 const urlParams = new URLSearchParams(window.location.search);
                 const compressedData = urlParams.get('m');
@@ -502,6 +609,7 @@
                 `;
                 listContainer.appendChild(li);
             }
+            calculateStatistics();
         }
 
         function drawFlightPath(codeA, codeB, isRoundTrip, color) {
@@ -604,6 +712,93 @@
             }).catch(err => {
                 prompt("Copy this link to share:", shareUrl); 
             });
+        }
+        
+        function toggleStats() {
+            const panel = document.getElementById('stats-panel');
+            panel.classList.toggle('open');
+        }
+
+        function calculateStatistics() {
+            let totalKm = 0;
+            let totalMin = 0;
+            let airportCounts = {};
+            let uniqueCountries = new Set();
+
+            for (const routeKey in routesState) {
+                const routeData = routesState[routeKey];
+                
+                routeData.flights.forEach(flight => {
+                    const from = flight.from;
+                    const to = flight.to;
+                    
+                    // Track Airports & Countries
+                    airportCounts[from] = (airportCounts[from] || 0) + 1;
+                    airportCounts[to] = (airportCounts[to] || 0) + 1;
+                    
+                    if (airportData[from]) uniqueCountries.add(airportData[from].country);
+                    if (airportData[to]) uniqueCountries.add(airportData[to].country);
+
+                    // Check exact routes first (handles both directions)
+                    const routeIdA = `${from}-${to}`;
+                    const routeIdB = `${to}-${from}`;
+                    
+                    if (validRoutesData[routeIdA]) {
+                        totalKm += validRoutesData[routeIdA].km;
+                        totalMin += validRoutesData[routeIdA].min;
+                    } else if (validRoutesData[routeIdB]) {
+                        totalKm += validRoutesData[routeIdB].km;
+                        totalMin += validRoutesData[routeIdB].min;
+                    } else {
+                        // Fallback Estimate using Turf.js
+                        if (airportData[from] && airportData[to]) {
+                            const pt1 = turf.point([airportData[from].lon, airportData[from].lat]);
+                            const pt2 = turf.point([airportData[to].lon, airportData[to].lat]);
+                            const dist = turf.distance(pt1, pt2, { units: 'kilometers' });
+                            totalKm += dist;
+                            // Estimate: 800 km/h avg speed + 30 mins for takeoff/taxi/landing
+                            totalMin += (dist / 800) * 60 + 30;
+                        }
+                    }
+                });
+            }
+
+            // Update DOM
+            document.getElementById('stat-dist').innerText = Math.round(totalKm).toLocaleString() + ' km';
+            document.getElementById('stat-time').innerText = formatMinutes(totalMin);
+            // Emission Estimate: ~115 grams per passenger-kilometer
+            document.getElementById('stat-emissions').innerText = Math.round(totalKm * 0.115).toLocaleString() + ' kg';
+            
+            document.getElementById('stat-airports').innerText = Object.keys(airportCounts).length;
+            document.getElementById('stat-countries').innerText = uniqueCountries.size;
+
+            // Sort & Render Top 5 Airports
+            const top5 = Object.entries(airportCounts)
+                .sort((a, b) => b[1] - a[1]) // Sort descending
+                .slice(0, 5);
+                
+            const listEl = document.getElementById('top-airports-list');
+            listEl.innerHTML = '';
+            
+            if (top5.length === 0) {
+                listEl.innerHTML = '<li style="color:#999;">No flights added yet.</li>';
+            } else {
+                top5.forEach(([code, count]) => {
+                    const cityName = airportData[code] ? airportData[code].city : 'Unknown';
+                    listEl.innerHTML += `
+                        <li>
+                            <span><b>${code}</b> - ${cityName}</span>
+                            <span class="ap-count-badge">${count}</span>
+                        </li>
+                    `;
+                });
+            }
+        }
+
+        function formatMinutes(mins) {
+            const h = Math.floor(mins / 60);
+            const m = Math.round(mins % 60);
+            return `${h.toLocaleString()}h ${m}m`;
         }
     </script>
 </body>
