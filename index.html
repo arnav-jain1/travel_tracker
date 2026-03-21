@@ -362,8 +362,8 @@ let airportData = {};
 window.onload = async function() {
     try {
         const [airportRes, routesRes] = await Promise.all([
-            fetch('airports.json'),
-            fetch('valid_routes.json').catch(() => ({ ok: false }))
+            fetch('./website_data/airports.json'),
+            fetch('./website_data/valid_routes.json').catch(() => ({ ok: false }))
         ]);
         if (!airportRes.ok) throw new Error('airports.json missing');
         airportData = await airportRes.json();
