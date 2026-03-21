@@ -1,1 +1,0 @@
-docker run -it -e PBF_PATH=/nominatim/data/total_merged.osm.pbf -e IMPORT_STYLE=admin -e UPDATE_MODE=none -p 8080:8080 -v "C:\Users\Arnav\Desktop\programming\nominatim\data:/nominatim/data" --name nominatim-usa-france mediagis/nominatim:5.2
