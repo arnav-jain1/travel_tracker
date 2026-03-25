@@ -142,12 +142,12 @@
     </div>
 
     <div id="number-tab" class="tab-content">
-        <form id="number-form" onsubmit="event.preventDefault();">
+        <form id="number-form">
             <label>Flight Number:</label>
-            <input type="text" id="flight-number" placeholder="e.g. DL0001" disabled style="margin-bottom:15px;">
+            <input type="text" id="flight-number" placeholder="e.g. DL496" style="margin-bottom:15px;" required>
             <label>Date:</label>
-            <input type="date" id="number-date" disabled style="margin-bottom:20px;">
-            <button class="disabled-btn" disabled>Coming Soon</button>
+            <input type="date" id="number-date" style="margin-bottom:20px;" required>
+            <button type="submit" id="number-submit-btn">Add Flight</button>
         </form>
     </div>
 
@@ -359,15 +359,21 @@ const mapLayers = L.layerGroup().addTo(map);
 
 // Load the data
 let airportData = {};
+let iataCodes = {};
+let icaoCodes = {};
 window.onload = async function() {
     try {
-        const [airportRes, routesRes] = await Promise.all([
+        const [airportRes, routesRes, iataCodesRes, icaoCodesRes] = await Promise.all([
             fetch('./website_data/airports.json'),
-            fetch('./website_data/valid_routes.json').catch(() => ({ ok: false }))
+            fetch('./website_data/valid_routes.json').catch(() => ({ ok: false })),
+            fetch('./website_data/iata_codes.json').catch(() => ({ ok: false })),
+            fetch('./website_data/icao_codes.json').catch(() => ({ ok: false }))
         ]);
         if (!airportRes.ok) throw new Error('airports.json missing');
         airportData = await airportRes.json();
         if (routesRes.ok) validRoutesData = await routesRes.json();
+        if (iataCodesRes.ok) iataCodes = await iataCodesRes.json();
+        if (icaoCodesRes.ok) icaoCodes = await icaoCodesRes.json();
 
         const compressed = new URLSearchParams(window.location.search).get('m');
         if (compressed) {
@@ -461,6 +467,105 @@ document.getElementById('route-form').addEventListener('submit', function(e) {
     document.getElementById('end-airport').value   = '';
     document.getElementById('opt-flight-number').value = '';
     renderApp();
+});
+
+// Handle "By Flight #" Form Submission
+document.getElementById('number-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const callsearchInput = document.getElementById('flight-number').value.trim().toUpperCase();
+    const date = document.getElementById('number-date').value;
+    const submitBtn = document.getElementById('number-submit-btn');
+
+    // Visual feedback while fetching
+    const originalBtnText = submitBtn.innerText;
+    submitBtn.innerText = "Searching...";
+    submitBtn.disabled = true;
+    submitBtn.style.backgroundColor = "#6c757d"; // Gray out briefly
+
+    try {
+        // Fetch data from adsbdb
+        let response = await fetch(`https://api.adsbdb.com/v0/callsign/${callsearchInput}`);
+        
+        // If the first request fails, attempt the IATA-to-ICAO conversion fallback
+        if (!response.ok) {
+            // Check if the 3rd character is a number (index 2)
+            const isIataFormat = callsearchInput.length >= 3 && !isNaN(parseInt(callsearchInput[2], 10));
+            
+            if (isIataFormat) {
+                const iataCode = callsearchInput.substring(0, 2);
+                const flightDigits = callsearchInput.substring(2);
+                
+                // Check if we have this IATA code in our dictionary
+                if (iataCodes[iataCode] && iataCodes[iataCode].icao) {
+                    const icaoCallsign = iataCodes[iataCode].icao + flightDigits;
+                    
+                    // Retry the fetch with the new ICAO callsign (e.g., DAL496)
+                    response = await fetch(`https://api.adsbdb.com/v0/callsign/${icaoCallsign}`);
+                    
+                    if (!response.ok) {
+                        throw new Error('Flight not found after checking both IATA and ICAO formats.');
+                    }
+                } else {
+                    throw new Error(`Flight not found, and airline code (${iataCode}) is missing from local database.`);
+                }
+            } else {
+                throw new Error('Flight not found in database. Check the flight number and try again.');
+            }
+        }
+        
+        const data = await response.json();
+        
+        // Ensure the response has the data we need
+        if (!data.response || !data.response.flightroute) {
+            throw new Error('No route details found for this flight.');
+        }
+
+        const route = data.response.flightroute;
+        
+        // Extract variables as requested
+        const callsign = route.callsign_icao; // Fallback to ICAO callsign if IATA is missing
+        const from = route.origin.iata_code;
+        const to = route.destination.iata_code;
+
+        // Verify airports exist in your local airports.json database
+        if (!airportData[from] || !airportData[to]) {
+            alert(`Route found (${from} ➔ ${to}), but one or both airports are missing from the local database.`);
+            return;
+        }
+
+        if (from === to) { 
+            alert('Airports must be different.'); 
+            return; 
+        }
+
+        // Add to routesState exactly like the "By Route" tab does
+        const key = [from, to].sort().join('-');
+        if (!routesState[key]) {
+            routesState[key] = { color: presetColors[0], flights: [] };
+        }
+        
+        routesState[key].flights.push({ 
+            id: flightIdCounter++, 
+            from, 
+            to, 
+            date, 
+            flightNum: callsign 
+        });
+
+        // Clear the input and render
+        document.getElementById('flight-number').value = '';
+        renderApp();
+
+    } catch (err) {
+        console.error(err);
+        alert(err.message || 'Error fetching flight data.');
+    } finally {
+        // Restore button state
+        submitBtn.innerText = originalBtnText;
+        submitBtn.disabled = false;
+        submitBtn.style.backgroundColor = ""; // Revert to CSS default
+    }
 });
 
 // Render 

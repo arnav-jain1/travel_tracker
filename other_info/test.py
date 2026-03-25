@@ -1,8 +1,7 @@
-import sys
 import requests
 import json
 
-callsign = "dl496"
+callsign = "DL1"
 url = f"https://api.adsbdb.com/v0/callsign/{callsign}"
 
 r = requests.get(url, timeout=10)
