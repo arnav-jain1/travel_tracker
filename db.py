@@ -27,8 +27,10 @@ ALLOWED_ORIGINS  = [            # tighten this to your actual domain(s)
     "http://127.0.0.1",
     # "https://yourapp.example.com",
 ]
+DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-DB_PATH = Path(__file__).parent / "database.db"
+DB_PATH = DATA_DIR / "database.db"
 
 # ── App setup ──────────────────────────────────────────────────────────────
 
@@ -63,7 +65,7 @@ def init_db():
     with sqlite3.connect(DB_PATH) as con:
         con.execute("""
             CREATE TABLE IF NOT EXISTS shares (
-                hash      TEXT PRIMARY KEY CHECK(length(hash) = 12),
+                hash      TEXT PRIMARY KEY CHECK(length(hash) = 20),
                 state     TEXT NOT NULL,
                 created   DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -74,7 +76,7 @@ def init_db():
 
 # ── Input helpers ──────────────────────────────────────────────────────────
 
-_HASH_RE = re.compile(r"^[0-9a-f]{12}$")
+_HASH_RE = re.compile(r"^[0-9a-f]{20}$")
 
 def is_valid_hash(val: str) -> bool:
     return bool(_HASH_RE.match(val))

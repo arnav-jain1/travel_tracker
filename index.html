@@ -993,7 +993,7 @@ async function generateShareLink() {
         const { hash } = await res.json();
         const url = window.location.href.split('?')[0] + '?h=' + hash;
         navigator.clipboard.writeText(url)
-            .then(() => alert('Share link copied!'))
+            .then(() => alert('Share link copied! Make sure to regenerate the url if you make changes.'))
             .catch(() => prompt('Copy this link:', url));
     } catch (err) {
         console.error('Share failed:', err);
