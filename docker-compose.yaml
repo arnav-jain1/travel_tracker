@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: flight_tracker_backend
+    ports:
+      - "5000:5000"
+    volumes:
+      # Persist the database on the host machine
+      - ./data:/app/data
+    restart: unless-stopped
+    environment:
+      - FLASK_ENV=production
